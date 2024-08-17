@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>킥보드 서비스</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #f0f0f0;
+            font-size: 18px;
+        }
+        #container {
+            border: 2px solid black;
+            padding: 20px;
+            background-color: white;
+            max-width: 800px;
+            width: 100%;
+            box-sizing: border-box;
+            text-align: center;
+            font-size: 18px;
+        }
+        label, input, button {
+            display: block;
+            margin: 2px auto;
+            text-align: center;
+            font-size: 18px;
+        }
+        #fare, #distance-time {
+            font-weight: bold;
+            font-size: 18px;
+        }
+        #map {
+            width: 100%;
+            height: 400px;
+            margin-top: 5px;
+            border: 0.5px solid black;
+        }
+        .control-panel {
+            margin-bottom: 20px;
+        }
+
+        .inline-buttons {
+            display: fix;
+            flex-direction: row;
+            justify-content: center;
+            gap: 20px;
+            margin-top: 2px;
+        }
+
+        .control-panel > input + button {
+            margin-top: 2px;
+        }
+
+        /* 출발지와 도착지 좌표 입력 필드 숨기기 */
+        #start, #end {
+            display: none;
+        }
+        /* 버튼 스타일 */
+        .button {
+            display: inline-block;
+            padding: 3px 16px;
+            font-size: 18px;
+            font-weight: 400;
+            line-height: 1.5;
+            text-align: center;
+            white-space: nowrap;
+            vertical-align: middle;
+            user-select: none;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            background-color: #f8f9fa;
+            cursor: pointer;
+            transition: background-color 0.15s ease-in-out, border-color 0.15s ease-in-out;
+        }
+        .button:hover {
+            background-color: #e2e6ea;
+            border-color: #dae0e5;
+        }
+
+        #startAddr {
+            margin-top: 20px;
+        }
+    </style>
+    <script type="text/javascript" src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=c73f352bb23d3baffd663a9988f1a8f8&libraries=services"></script>
+</head>
+<body>
+
+<div id="container">
+    <h1>킥보드 서비스</h1>
+    
+    <div class="control-panel">
+        <!-- 이메일 입력 필드 추가 -->
+        <label for="email">이메일:</label>
+        <input type="text" id="email" placeholder="이메일 입력" />
+        
+        <!-- 킥보드 사용 시작, 종료 및 리셋 버튼 추가 -->
+        <div class="inline-buttons">
+            <button id="start-button" class="button" onclick="startScooter()">킥보드 사용 시작</button>
+            <button id="stop-button" class="button" onclick="stopScooter()" disabled>킥보드 사용 종료</button>
+            <button id="reset-button" class="button" onclick="resetScooter()" disabled>킥보드 리셋</button>
+        </div>
+
+        <!-- 출발지 입력 필드 숨기기 -->
+        <label for="start" style="display:none;">출발지:</label>
+        <input type="text" id="start" placeholder="예: 서울역" />
+        <div id="startAddr">출발지 주소: 없음</div> <!-- 출발지 주소를 표시할 div -->
+        
+        <label for="keyword">목적지 검색:</label>
+        <input type="text" id="keyword" placeholder="예: 서강대학교">
+        <button class="button" onclick="searchPlaces()">목적지 검색</button>
+
+        <!-- 도착지 입력 필드 숨기기 -->
+        <label for="end" style="display:none;">도착지:</label>
+        <input type="text" id="end" placeholder="예: 강남역" />
+        <div id="endAddr">도착지 주소: 없음</div> <!-- 도착지 주소를 표시할 div -->
+
+        <button class="button" onclick="findRoute()">경로 찾기</button>
+        <button class="button" onclick="resetDestination()">도착지 리셋</button> <!-- 도착지 리셋 버튼 -->
+        
+        <!-- 예상 거리와 시간을 표시할 영역 -->
+        <div id="distance-time"></div>
+
+        <div id="fare">기본 요금: 1000원</div> <!-- 기본 요금 1000원 -->
+    </div>
+
+    <div id="map"></div> <!-- 지도를 표시할 div -->
+</div>
+
+<script>
+    let timer;
+    let startTime;
+    let fare = 1000; // 기본 요금 1000원 설정
+    const ratePerSecond = 1.6666; // 요금 계산 비율: 초당 0.5원
+    let currentPolyline = null; // 현재 그려진 폴리라인을 저장할 변수
+    let markers = []; // 검색한 장소의 마커들을 저장할 배열
+    let currentLocationMarker = null; // 현재 위치 마커
+    let infowindow = null; // 인포윈도우 변수
+    let isTimerRunning = false; // 타이머가 실행 중인지 여부를 추적
+
+    function startScooter() {
+        const email = document.getElementById("email").value;
+        if (validateEmail(email)) {
+            if (!isTimerRunning) {
+                startTime = Date.now();
+                timer = setInterval(updateFare, 50); // 1초마다 요금 업데이트
+                isTimerRunning = true;
+            }
+            document.getElementById("start-button").disabled = true;
+            document.getElementById("stop-button").disabled = false;
+            document.getElementById("reset-button").disabled = false; // 리셋 버튼 활성화
+        } else {
+            alert("올바른 이메일 주소를 입력하세요.");
+        }
+    }
+
+    function stopScooter() {
+        if (isTimerRunning) {
+            clearInterval(timer); // 타이머 멈추기
+            const endTime = new Date();
+            const totalTime = (endTime - startTime) / 1000;
+            fare += totalTime * ratePerSecond; // 기본 요금에 추가 요금 더하기
+
+            // 탑승 시간과 하차 시간을 사람이 읽을 수 있는 형식으로 변환
+            const start_time = new Date(startTime).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
+            const end_time = endTime.toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
+
+            const start_address = document.getElementById('startAddr').innerText.replace('출발지 주소: ', '');
+            const end_address = document.getElementById('endAddr').innerText.replace('도착지 주소: ', '');
+            const email = document.getElementById("email").value;
+
+            fetch("http://localhost:5000/send_fare_email", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    fare: fare.toFixed(2),
+                    start_address: start_address,
+                    end_address: end_address,
+                    start_time: start_time,
+                    end_time: end_time,
+                    email: email
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.message === "Email sent successfully") {
+                    alert("영수증이 이메일로 전송되었습니다.");
+                } else {
+                    alert("영수증 이메일 전송에 실패했습니다.");
+                }
+            })
+            .catch(error => {
+                console.error("Error:", error);
+                alert("영수증 이메일 전송 중 오류가 발생했습니다.");
+            });
+
+            document.getElementById("fare").innerText = `최종 요금: ${fare.toFixed(2)}원`;
+            document.getElementById("stop-button").disabled = true;
+            document.getElementById("reset-button").disabled = false; // 리셋 버튼 활성화
+            isTimerRunning = false;
+        }
+    }
+
+    function resetScooter() {
+        if (!isTimerRunning) {
+            clearInterval(timer); // 타이머 정지
+            fare = 1000; // 기본 요금으로 초기화
+            document.getElementById("fare").innerText = "기본 요금: 1000원"; // 현재 요금 표시
+            document.getElementById("start-button").disabled = false; // 킥보드 사용 시작 버튼 활성화
+            document.getElementById("stop-button").disabled = true; // 킥보드 사용 종료 버튼 비활성화
+            document.getElementById("reset-button").disabled = true; // 킥보드 리셋 버튼 비활성화
+        }
+    }
+
+    function updateFare() {
+        const currentTime = Date.now();
+        const elapsedTime = (currentTime - startTime) / 1000;
+        const additionalFare = elapsedTime * ratePerSecond;
+        document.getElementById("fare").innerText = `현재 요금: ${(fare + additionalFare).toFixed(2)}원`;
+    }
+
+    function validateEmail(email) {
+        const re = /\S+@\S+\.\S+/;
+        return re.test(email);
+    }
+
+    // 지도 관련 코드
+    var mapContainer = document.getElementById('map'),
+        mapOption = { 
+            center: new kakao.maps.LatLng(37.5665, 126.9780),
+            level: 3 
+        };
+
+    var map = new kakao.maps.Map(mapContainer, mapOption);
+    var ps = new kakao.maps.services.Places();  
+    var geocoder = new kakao.maps.services.Geocoder();  // Geocoder 객체 생성
+
+    // 사용자의 현재 위치를 출발지로 설정하는 함수
+    function setCurrentLocationAsStart() {
+        if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(function(position) {
+                var lat = position.coords.latitude,
+                    lon = position.coords.longitude;
+
+                var locPosition = new kakao.maps.LatLng(lat, lon);
+                document.getElementById('start').value = `${lat},${lon}`;
+
+                // 이전 현재 위치 마커 제거
+                if (currentLocationMarker) {
+                    currentLocationMarker.setMap(null);
+                }
+
+                currentLocationMarker = new kakao.maps.Marker({  
+                    map: map, 
+                    position: locPosition
+                }); 
+
+                var infowindow = new kakao.maps.InfoWindow({
+                    content : '<div style="padding:5px;">현재 위치</div>', 
+                    removable : true
+                });
+                
+                infowindow.open(map, currentLocationMarker);
+                map.setCenter(locPosition);
+
+                // 좌표를 주소로 변환하여 표시
+                searchAddrFromCoords(locPosition, function(result, status) {
+                    if (status === kakao.maps.services.Status.OK) {
+                        var detailAddr = !!result[0].road_address ? result[0].road_address.address_name : result[0].address.address_name;
+                        document.getElementById('startAddr').innerText = `출발지 주소: ${detailAddr}`;
+                    }
+                });
+            });
+        } else {
+            alert("현재 위치를 알 수 없습니다.");
+        }
+    }
+
+    setCurrentLocationAsStart(); // 페이지 로드 시 현재 위치를 출발지로 설정
+
+    function searchAddrFromCoords(coords, callback) {
+        geocoder.coord2Address(coords.getLng(), coords.getLat(), callback);
+    }
+
+    function findRoute() {
+        var start = document.getElementById('start').value;
+        var end = document.getElementById('end').value;
+
+        // 출발지가 좌표인지 주소인지 판단하고 처리
+        if (isCoordinate(start)) {
+            var startCoords = start.split(',');
+            var startPosition = new kakao.maps.LatLng(parseFloat(startCoords[0]), parseFloat(startCoords[1]));
+            console.log("Start Position:", startPosition); // 출발지 좌표 출력
+            findEndAndDrawRoute(startPosition, end);
+        } else {
+            ps.keywordSearch(start, function(data, status) {
+                if (status === kakao.maps.services.Status.OK) {
+                    var startPosition = new kakao.maps.LatLng(data[0].y, data[0].x);
+                    console.log("Start Position (Coords):", startPosition); // 출발지 좌표 출력
+                    findEndAndDrawRoute(startPosition, end);
+                } else {
+                    alert('출발지 검색 결과가 없습니다.');
+                    console.log('출발지 검색 실패:', status, start);
+                }
+            });
+        }
+    }
+
+    function findEndAndDrawRoute(startPosition, end) {
+        if (isCoordinate(end)) {
+            var endPosition = new kakao.maps.LatLng(...end.split(',').map(Number));
+            console.log("End Position (Coords):", endPosition); // 도착지 좌표 출력
+            drawRoute(startPosition, endPosition);
+        } else {
+            searchAndDrawRoute(startPosition, end);
+        }
+    }
+
+    function searchAndDrawRoute(startPosition, endAddress) {
+        ps.keywordSearch(endAddress, function(data, status) {
+            if (status === kakao.maps.services.Status.OK) {
+                var endPosition = new kakao.maps.LatLng(data[0].y, data[0].x);
+                console.log("End Position (Coords):", endPosition); // 도착지 좌표 출력
+                drawRoute(startPosition, endPosition);
+            } else {
+                alert('도착지 검색 결과가 없습니다.');
+                console.log('도착지 검색 실패:', status, endAddress);
+            }
+        });
+    }
+
+    function drawRoute(startPosition, endPosition) {
+        const origin = `${startPosition.getLng()},${startPosition.getLat()}`;
+        const destination = `${endPosition.getLng()},${endPosition.getLat()}`;
+
+        console.log("Origin:", origin);
+        console.log("Destination:", destination);
+
+        const url = 'https://apis-navi.kakaomobility.com/v1/directions';
+        const REST_API_KEY = '919687c36b28a4c8875e33e33bb8d0e6';
+        const queryParams = new URLSearchParams({
+            origin: origin,
+            destination: destination,
+            priority: 'RECOMMEND',
+            car_fuel: 'GASOLINE',
+            car_hipass: 'false',
+            alternatives: 'false',
+            road_details: 'false'
+        });
+
+        const requestUrl = `${url}?${queryParams.toString()}`;
+
+        fetch(requestUrl, {
+            method: 'GET',
+            headers: {
+                'Authorization': `KakaoAK ${REST_API_KEY}`,
+                'Content-Type': 'application/json'
+            }
+        })
+        .then(response => {
+            console.log("Server Response:", response);
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            return response.json();
+        })
+        .then(data => {
+            console.log("Route Data:", data);
+
+            if (data.error) {
+                alert(data.error);
+                return;
+            }
+
+            const routeData = data.routes[0];
+            const summary = routeData.summary;
+            const distance = (summary.distance / 1000).toFixed(2); // km로 변환
+            const duration = Math.floor(summary.duration / 60); // 분 단위로 변환
+
+
+            // 예상 요금 계산
+            const expectedFare = 1000 + (duration * 100); // 기본 요금 1000원 + (소요 시간 * 분당 100원)
+
+
+            // 예상 거리, 시간, 요금을 화면에 표시
+            document.getElementById('distance-time').innerText = `예상 거리: ${distance} km, 예상 소요 시간: ${duration} 분, 예상 요금: ${expectedFare}원`;
+
+            const path = routeData.sections[0].roads.flatMap(road => 
+                road.vertexes.reduce((acc, val, i, array) => {
+                    if (i % 2 === 0) acc.push([array[i + 1], val]);
+                    return acc;
+                }, [])
+            );
+
+            const polylinePath = path.map(coord => new kakao.maps.LatLng(coord[0], coord[1]));
+
+            if (currentPolyline) {
+                currentPolyline.setMap(null); // 기존 폴리라인 제거
+            }
+
+            currentPolyline = new kakao.maps.Polyline({
+                path: polylinePath,
+                strokeWeight: 5,
+                strokeColor: '#FF0000',
+                strokeOpacity: 1.0,
+                strokeStyle: 'solid'
+            });
+
+            currentPolyline.setMap(map);
+
+            // 지도의 bounds를 수동으로 계산
+            const bounds = new kakao.maps.LatLngBounds();
+            polylinePath.forEach(function(latlng) {
+                bounds.extend(latlng);
+            });
+
+            map.setBounds(bounds);
+        })
+        .catch(error => {
+            console.error('Error fetching route:', error);
+            alert('경로를 가져오는 중 오류가 발생했습니다. 다시 시도해주세요.');
+        });
+    }
+
+    // 좌표 판별 함수
+    function isCoordinate(input) {
+        var regex = /^\d+(\.\d+)?,\d+(\.\d+)?$/;
+        return regex.test(input);
+    }
+
+    // 키워드로 장소 검색 기능 추가
+    function searchPlaces() {
+        var keyword = document.getElementById('keyword').value;
+
+        if (!keyword.trim()) {
+            alert('키워드를 입력해주세요!');
+            return;
+        }
+
+        ps.keywordSearch(keyword, function(data, status) {
+            if (status === kakao.maps.services.Status.OK) {
+                var bounds = new kakao.maps.LatLngBounds();
+
+                // 마커 제거
+                markers.forEach(marker => marker.setMap(null));
+                markers = []; // 배열 초기화
+
+                for (var i=0; i<data.length; i++) {
+                    var place = data[i];
+                    var marker = new kakao.maps.Marker({
+                        map: map,
+                        position: new kakao.maps.LatLng(place.y, place.x) 
+                    });
+
+                    markers.push(marker); // 마커를 배열에 추가
+
+                    var infowindow = new kakao.maps.InfoWindow({zIndex:1});
+
+                    // 클릭된 마커를 추적
+                    (function(marker, place) {
+                        kakao.maps.event.addListener(marker, 'click', function() {
+                            infowindow.setContent('<div style="padding:5px;font-size:12px;">' + place.place_name + '</div>');
+                            infowindow.open(map, marker);
+
+                            // 클릭된 마커 정보를 도착지 필드에 설정
+                            document.getElementById('end').value = `${place.y},${place.x}`;
+                            
+                            // 좌표를 주소로 변환하여 표시
+                            geocoder.coord2Address(place.x, place.y, function(result, status) {
+                                if (status === kakao.maps.services.Status.OK) {
+                                    var detailAddr = !!result[0].road_address ? result[0].road_address.address_name : result[0].address.address_name;
+                                    document.getElementById('endAddr').innerText = `도착지 주소: ${detailAddr}`;
+                                }
+                            });
+                        });
+                    })(marker, place);
+
+                    bounds.extend(new kakao.maps.LatLng(place.y, place.x));
+                }
+
+                map.setBounds(bounds);
+            } else if (status === kakao.maps.services.Status.ZERO_RESULT) {
+                alert('검색 결과가 없습니다.');
+            } else if (status === kakao.maps.services.Status.ERROR) {
+                alert('검색 중 오류가 발생했습니다.');
+            }
+        });
+    }
+
+    // 도착지 리셋 함수
+    function resetDestination() {
+        // 도착지 필드와 예상 거리, 시간 영역 초기화
+        document.getElementById('end').value = '';
+        document.getElementById('endAddr').innerText = '도착지 주소: 없음';
+        document.getElementById('distance-time').innerText = ''; // 예상 거리와 시간 영역 숨기기
+
+        // 폴리라인 제거
+        if (currentPolyline) {
+            currentPolyline.setMap(null); // 지도에서 경로 제거
+            currentPolyline = null;
+        }
+
+        // 검색한 장소 마커 제거
+        markers.forEach(marker => marker.setMap(null));
+        markers = []; // 배열 초기화
+
+        // 인포윈도우 제거
+        if (infowindow) {
+            infowindow.close(); // 인포윈도우 닫기
+            infowindow = null;
+        }
+
+        // 현재 위치를 중심으로 지도를 재설정
+        setCurrentLocationAsStart();
+    }
+</script>
+
+</body>
+</html>

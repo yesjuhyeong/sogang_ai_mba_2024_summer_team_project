@@ -1,0 +1,8 @@
+# Ignore node_modules directory
+node_modules/
+
+# Ignore history folder
+.history/
+
+# Ignore favicon2.ico file
+favicon2.ico

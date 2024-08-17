@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>사용자 인증</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #f0f0f0;
+        }
+        #container {
+            border: 2px solid black;
+            padding: 20px;
+            background-color: white;
+            max-width: 800px;
+            width: 100%;
+            height: 800px;
+            box-sizing: border-box;
+            text-align: center;
+            position: relative;
+            overflow-y: auto;
+        }
+        h1 {
+            font-size: 32px;
+        }
+        #output {
+            margin-top: 20px;
+            font-size: 18px;
+        }
+        #face-image {
+            width: 100%;
+            max-width: 300px;
+            height: auto;
+            margin-top: 10px;
+            display: block;
+            margin-left: auto;
+            margin-right: auto;
+        }
+        #loading-bar {
+            display: none;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+        .loading-spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            border-top: 4px solid #4CAF50;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        #video {
+            display: none;
+            max-width: 100%;
+            margin-top: 10px;
+            height: auto;
+        }
+        #deviceSelection {
+            margin-top: 10px;
+        }
+        #button-container {
+            display: none;
+            justify-content: center;
+            gap: 10px;
+            margin-bottom: 10px;
+            font-size: 18px;
+        }
+        #fileUpload {
+            display: flex;
+            align-items: center;
+        }
+        .button, #fileUpload label {
+            display: inline-block;
+            padding: 6px 12px;
+            font-size: 18px;
+            font-weight: 400;
+            line-height: 1.5;
+            text-align: center;
+            white-space: nowrap;
+            vertical-align: middle;
+            user-select: none;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            background-color: #f8f9fa;
+            cursor: pointer;
+            transition: background-color 0.15s ease-in-out, border-color 0.15s ease-in-out;
+        }
+        .button:hover, #fileUpload label:hover {
+            background-color: #e2e6ea;
+            border-color: #dae0e5;
+        }
+        #fileUpload input[type="file"] {
+            display: none;
+        }
+        #clickText {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: rgba(0, 0, 0, 0.5);
+            color: white;
+            padding: 5px 10px;
+            border-radius: 5px;
+            font-size: 20px;
+            cursor: pointer;
+            z-index: 10;
+        }
+        #scooterButton {
+            display: none; /* 기본적으로 버튼을 숨김 */
+            padding: 6px 12px;
+            font-size: 18px;
+            font-weight: 400;
+            line-height: 1.5;
+            text-align: center;
+            white-space: nowrap;
+            vertical-align: middle;
+            user-select: none;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            background-color: #f8f9fa;
+            cursor: pointer;
+            transition: background-color 0.15s ease-in-out, border-color 0.15s ease-in-out;
+            margin: 10px auto 0 auto;
+        }
+        #scooterButton:hover {
+            background-color: #e2e6ea;
+            border-color: #dae0e5;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="container">
+        <h1>사용자 연령 및 헬멧 착용 확인</h1>
+        <div style="position: relative;">
+            <img src="{{ url_for('static', filename='kick_scooter_logo1.png') }}" alt="Kick Scooter Logo" id="mainImage" style="max-width: 100%; height: auto; margin-top: 10px; cursor: pointer;">
+            <div id="clickText">Click!</div>
+        </div>
+        
+        <!-- 버튼들 -->
+        <div id="button-container">
+            <div id="fileUpload">
+                <label for="imageUpload" class="button">이미지 업로드</label>
+                <input type="file" id="imageUpload" accept="image/*">
+            </div>
+            <button id="startCameraButton" class="button">사용자 인증</button>
+            <button id="resetButton" class="button">리셋</button>
+        </div>
+        <video id="video" autoplay muted></video>
+        <button id="takePhotoButton" class="button" style="display: none;">사진 촬영</button>
+        <div id="deviceSelection" style="display: none;">
+            <p>카메라를 선택하세요:</p>
+        </div>
+        
+        <div id="output"></div>
+        <div id="loading-bar">
+            <div class="loading-spinner"></div>
+        </div>
+    </div>
+
+    <script>
+        const mainImage = document.getElementById('mainImage');
+        const clickText = document.getElementById('clickText');
+        const buttonContainer = document.getElementById('button-container');
+        const loadingBar = document.getElementById('loading-bar');
+        const scooterButton = document.getElementById('scooterButton');
+
+        // 이미지 클릭 시
+        mainImage.addEventListener('click', () => {
+            mainImage.style.display = 'none';
+            clickText.style.display = 'none';
+            buttonContainer.style.display = 'flex';
+        });
+
+        const video = document.getElementById('video');
+        const startCameraButton = document.getElementById('startCameraButton');
+        const resetButton = document.getElementById('resetButton');
+        const takePhotoButton = document.getElementById('takePhotoButton');
+        const deviceSelection = document.getElementById('deviceSelection');
+        const output = document.getElementById('output');
+        const imageUpload = document.getElementById('imageUpload');
+        let stream;
+
+        // 헬멧 착용 여부 확인 함수 추가
+        async function checkHelmet(imageData) {
+            const apiKey = 'AIzaSyBTmk-WZ2ef5sf-UXr0gOkMijHKmwfBJEo'; // Google Cloud Vision API 키
+            const visionUrl = `https://vision.googleapis.com/v1/images:annotate?key=${apiKey}`;
+            const requestBody = {
+                requests: [
+                    {
+                        image: {
+                            content: imageData
+                        },
+                        features: [
+                            {
+                                type: "LABEL_DETECTION",
+                                maxResults: 10
+                            }
+                        ]
+                    }
+                ]
+            };
+
+            try {
+                const response = await fetch(visionUrl, {
+                    method: 'POST',
+                    body: JSON.stringify(requestBody)
+                });
+                const result = await response.json();
+                const labels = result.responses[0].labelAnnotations.map(annotation => annotation.description.toLowerCase());
+                return labels.includes('helmet');
+            } catch (error) {
+                console.error("헬멧 체크 중 오류 발생:", error);
+                return false;
+            }
+        }
+
+        // 카메라 장치 목록을 사용자에게 보여주고 선택을 처리하는 함수
+        async function showCameraDevices(devices) {
+            deviceSelection.innerHTML = '<p>카메라를 선택하세요:</p>';
+            devices.forEach(device => {
+                const button = document.createElement('button');
+                button.textContent = device.label || '이름 없음';
+                button.addEventListener('click', () => startCamera(device.deviceId));
+                deviceSelection.appendChild(button);
+            });
+            deviceSelection.style.display = 'block';
+        }
+
+        // 선택된 카메라 장치로 비디오 스트림 시작
+        async function startCamera(deviceId) {
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({ video: { deviceId } });
+                video.srcObject = stream;
+                video.style.display = 'block';
+                video.play();  // 비디오 재생 시작
+                takePhotoButton.style.display = 'inline';
+                deviceSelection.style.display = 'none';  // 장치 선택 숨기기
+            } catch (err) {
+                console.error("카메라를 시작할 수 없습니다:", err);
+                alert("카메라를 시작할 수 없습니다. 권한이 허용되었는지 확인해주세요.");
+            }
+        }
+
+        // 카메라 시작 버튼 클릭 시
+        startCameraButton.addEventListener('click', async () => {
+            try {
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                const videoDevices = devices.filter(device => device.kind === 'videoinput');
+                
+                if (videoDevices.length > 0) {
+                    showCameraDevices(videoDevices);
+                } else {
+                    alert('카메라 장치가 감지되지 않았습니다.');
+                }
+            } catch (err) {
+                console.error("장치 정보를 가져오는 데 실패했습니다:", err);
+                alert("카메라 장치 목록을 가져오는 데 실패했습니다.");
+            }
+        });
+
+        // 사진 촬영 버튼 클릭 시
+        takePhotoButton.addEventListener('click', async () => {
+            const canvas = document.createElement('canvas');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            const context = canvas.getContext('2d');
+            context.drawImage(video, 0, 0, canvas.width, canvas.height);
+            const dataUrl = canvas.toDataURL('image/png');
+            const base64Image = dataUrl.split(',')[1];
+
+            output.innerHTML = `
+                <h3>분석 결과:</h3>
+                <p><strong>나이:</strong> 분석 중...</p>
+                <img id="face-image" src="${dataUrl}" alt="촬영된 이미지">
+                <button id="scooterButton" class="button" style="display: none;">킥보드 사용 신청</button>
+            `;
+
+            loadingBar.style.display = "block"; // 로딩바 표시
+
+            // 헬멧 착용 여부 확인
+            const isHelmet = await checkHelmet(base64Image);
+
+            // 서버로 이미지 전송
+            const formData = new FormData();
+            formData.append("file", dataURLToBlob(dataUrl), "photo.png");
+
+            sendImageToServer(formData, isHelmet);
+
+            // 카메라 종료
+            stream.getTracks().forEach(track => track.stop());
+            video.style.display = 'none';
+            takePhotoButton.style.display = 'none';
+        });
+
+        // 파일 업로드 시
+        imageUpload.addEventListener("change", function(event) {
+            const file = event.target.files[0];
+            const formData = new FormData();
+            formData.append("file", file);
+
+            // 헬멧 착용 여부 확인을 위해 이미지를 Base64로 변환
+            const reader = new FileReader();
+            reader.onload = async function(e) {
+                const base64Image = e.target.result.split(',')[1];
+                const isHelmet = await checkHelmet(base64Image);
+                sendImageToServer(formData, isHelmet);
+            };
+            reader.readAsDataURL(file);
+        });
+
+        // 리셋 버튼 클릭 시
+        resetButton.addEventListener('click', () => {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+            }
+            video.style.display = 'none';
+            takePhotoButton.style.display = 'none';
+            deviceSelection.style.display = 'none';
+            output.innerHTML = '';
+            imageUpload.value = '';  // 파일 선택 필드 초기화
+        });
+
+        function sendImageToServer(formData, isHelmet) {
+            // 로딩바 표시
+            const loadingBar = document.getElementById("loading-bar");
+            const loadingBarInner = loadingBar.querySelector("div");
+            loadingBar.style.display = "block";
+            let progress = 0;
+
+            const interval = setInterval(() => {
+                if (progress < 100) {
+                    progress += 10;
+                    loadingBarInner.style.width = progress + "%";
+                }
+            }, 100);
+
+            fetch("http://localhost:5000/recognize", {
+                method: "POST",
+                body: formData
+            })
+            .then(response => response.json())
+            .then(result => {
+                clearInterval(interval);
+                loadingBar.style.display = "none"; // 로딩바 숨기기
+
+                let outputHtml = `
+                    <h3>분석 결과:</h3>
+                    <p><strong>나이:</strong> ${result.age}</p>
+                    <img id="face-image" src="${URL.createObjectURL(formData.get("file"))}" alt="촬영된 이미지">
+                `;
+
+                let errorMessage = '';
+
+                if (result.age < 20 && !isHelmet) {
+                    errorMessage = '킥보드 사용 불가 (나이 및 헬멧 미착용)';
+                } else if (result.age < 20) {
+                    errorMessage = '킥보드 사용 불가 (나이)';
+                } else if (!isHelmet) {
+                    errorMessage = '킥보드 사용 불가 (헬멧 미착용)';
+                }
+
+                if (errorMessage) {
+                    outputHtml += `<p>${errorMessage}</p>`;
+                    output.innerHTML = outputHtml;
+                } else {
+                    outputHtml += `<button id="scooterButton" class="button" style="display:block;" onclick="location.href='/scooter'">킥보드 사용 신청</button>`;
+                    output.innerHTML = outputHtml;
+                }
+            })
+            .catch(error => {
+                clearInterval(interval);
+                loadingBar.style.display = "none"; // 로딩바 숨기기
+                output.innerHTML = `<h3>오류 발생:</h3><p>서버와 통신 중 오류가 발생했습니다.</p>`;
+            });
+        }
+
+        function dataURLToBlob(dataUrl) {
+            const byteString = atob(dataUrl.split(',')[1]);
+            const mimeString = dataUrl.split(',')[0].split(':')[1].split(';')[0];
+            const buffer = new ArrayBuffer(byteString.length);
+            const data = new DataView(buffer);
+            for (let i = 0; i < byteString.length; i++) {
+                data.setUint8(i, byteString.charCodeAt(i));
+            }
+            return new Blob([buffer], { type: mimeString });
+        }
+    </script>
+</body>
+</html>
